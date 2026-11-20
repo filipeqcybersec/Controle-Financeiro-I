@@ -1,0 +1,545 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Controle Financeiro</title>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <style>
+    :root {
+      --bg-main: #111315;
+      --bg-card: #181a1d;
+      --bg-input: #202327;
+      --border: #282c32;
+      --text-primary: #f1f3f5;
+      --text-secondary: #8b929a;
+      --green: #38a169;
+      --green-soft: rgba(56, 161, 105, 0.14);
+      --red: #e05252;
+      --red-soft: rgba(224, 82, 82, 0.14);
+      --blue: #5a8dee;
+      --blue-soft: rgba(90, 141, 238, 0.14);
+      --amber: #d69e2e;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
+    body { background-color: var(--bg-main); color: var(--text-primary); min-height: 100vh; padding: 20px; }
+    .container { max-width: 1200px; margin: 0 auto; }
+
+    /* Auth Screen */
+    #auth-screen { max-width: 380px; margin: 80px auto; background: var(--bg-card); border: 1px solid var(--border); border-radius: 12px; padding: 28px; }
+    #auth-screen h2 { font-size: 1.25rem; margin-bottom: 6px; }
+    #auth-screen p { color: var(--text-secondary); font-size: 0.875rem; margin-bottom: 20px; }
+
+    /* Header */
+    header { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: 24px; padding-bottom: 16px; border-bottom: 1px solid var(--border); }
+    .brand { display: flex; align-items: center; gap: 10px; font-weight: 600; font-size: 1.1rem; }
+    .controls { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+
+    input, select, button { background: var(--bg-input); border: 1px solid var(--border); color: var(--text-primary); padding: 9px 12px; border-radius: 8px; font-size: 0.875rem; outline: none; transition: 0.15s; }
+    input:focus, select:focus { border-color: #4a5568; }
+    button { cursor: pointer; font-weight: 500; }
+    button:hover { background: #2a2e33; }
+    .btn-primary { background: var(--green); border-color: var(--green); color: #fff; font-weight: 600; }
+    .btn-primary:hover { background: #2f855a; }
+    .btn-ghost { background: transparent; border-color: var(--border); color: var(--text-secondary); }
+
+    /* Summary Cards */
+    .summary-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 16px; margin-bottom: 20px; }
+    .card { background: var(--bg-card); border: 1px solid var(--border); border-radius: 12px; padding: 18px 20px; }
+    .card-label { font-size: 0.8rem; color: var(--text-secondary); margin-bottom: 8px; display: flex; justify-content: space-between; }
+    .card-value { font-size: 1.6rem; font-weight: 700; letter-spacing: -0.5px; }
+    .card-green { border-color: rgba(56, 161, 105, 0.35); background: linear-gradient(180deg, rgba(56,161,105,0.06) 0%, var(--bg-card) 100%); }
+    .card-green .card-value { color: #68d391; }
+    .card-red { border-color: rgba(224, 82, 82, 0.35); background: linear-gradient(180deg, rgba(224,82,82,0.06) 0%, var(--bg-card) 100%); }
+    .card-red .card-value { color: #fc8181; }
+    .card-blue { border-color: rgba(90, 141, 238, 0.35); background: linear-gradient(180deg, rgba(90,141,238,0.06) 0%, var(--bg-card) 100%); }
+    .card-blue .card-value { color: #90cdf4; }
+
+    /* Main Grid */
+    .main-grid { display: grid; grid-template-columns: 1fr 1.25fr; gap: 16px; }
+    @media (max-width: 860px) { .main-grid { grid-template-columns: 1fr; } }
+    .left-col { display: flex; flex-direction: column; gap: 16px; }
+
+    .section-title { font-size: 0.95rem; font-weight: 600; margin-bottom: 16px; display: flex; justify-content: space-between; align-items: center; }
+
+    /* Goals */
+    .goal-item { margin-bottom: 16px; }
+    .goal-item:last-child { margin-bottom: 0; }
+    .goal-header { display: flex; justify-content: space-between; font-size: 0.85rem; margin-bottom: 6px; }
+    .goal-header span:last-child { color: var(--text-secondary); }
+    .progress-bg { background: var(--bg-input); height: 8px; border-radius: 99px; overflow: hidden; }
+    .progress-fill { height: 100%; background: var(--green); border-radius: 99px; transition: width 0.3s ease; }
+
+    /* Chart */
+    .chart-wrapper { position: relative; height: 220px; display: flex; align-items: center; justify-content: center; }
+
+    /* Transactions */
+    .tx-list { display: flex; flex-direction: column; gap: 10px; max-height: 460px; overflow-y: auto; padding-right: 4px; }
+    .tx-item { display: flex; justify-content: space-between; align-items: center; padding: 10px 12px; background: var(--bg-input); border-radius: 8px; border: 1px solid transparent; }
+    .tx-item:hover { border-color: var(--border); }
+    .tx-left { display: flex; flex-direction: column; gap: 4px; }
+    .tx-desc { font-size: 0.9rem; font-weight: 500; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+    .tx-date { font-size: 0.75rem; color: var(--text-secondary); }
+    .badge { font-size: 0.7rem; padding: 2px 8px; border-radius: 6px; background: #2c3138; color: #cbd5e0; font-weight: 500; }
+    .tx-right { display: flex; align-items: center; gap: 12px; }
+    .tx-amount { font-weight: 600; font-size: 0.92rem; }
+    .val-in { color: #68d391; }
+    .val-out { color: #fc8181; }
+    .val-third { color: #90cdf4; }
+    .btn-del { background: transparent; border: none; color: var(--text-secondary); padding: 4px 6px; font-size: 0.8rem; }
+    .btn-del:hover { color: var(--red); background: transparent; }
+
+    /* Modal */
+    .modal-backdrop { position: fixed; inset: 0; background: rgba(0,0,0,0.72); display: none; align-items: center; justify-content: center; padding: 16px; z-index: 50; }
+    .modal { background: var(--bg-card); border: 1px solid var(--border); border-radius: 12px; padding: 24px; width: 100%; max-width: 420px; }
+    .form-group { display: flex; flex-direction: column; gap: 6px; margin-bottom: 14px; }
+    .form-group label { font-size: 0.8rem; color: var(--text-secondary); }
+    .modal-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 18px; }
+    .hidden { display: none !important; }
+    .error-msg { color: #fc8181; font-size: 0.8rem; margin-top: 10px; }
+  </style>
+</head>
+<body>
+
+  <!-- TELA DE LOGIN -->
+  <div id="auth-screen" class="hidden">
+    <h2>Controle Financeiro</h2>
+    <p>Entre para sincronizar seus dados em qualquer máquina.</p>
+    <div class="form-group">
+      <label>E-mail</label>
+      <input type="email" id="auth-email" placeholder="seu@email.com" />
+    </div>
+    <div class="form-group">
+      <label>Senha</label>
+      <input type="password" id="auth-password" placeholder="••••••••" />
+    </div>
+    <div style="display: flex; gap: 10px; margin-top: 16px;">
+      <button class="btn-primary" style="flex:1" onclick="handleLogin()">Entrar</button>
+      <button class="btn-ghost" onclick="handleSignUp()">Criar Conta</button>
+    </div>
+    <div id="auth-error" class="error-msg"></div>
+  </div>
+
+  <!-- PAINEL PRINCIPAL -->
+  <div id="app-screen" class="container hidden">
+    <header>
+      <div class="brand">
+        <span>Controle Financeiro</span>
+      </div>
+      <div class="controls">
+        <input type="month" id="month-filter" onchange="loadData()" />
+        <button class="btn-primary" onclick="openTxModal()">+ Novo Lançamento</button>
+        <button class="btn-ghost" onclick="openGoalModal()" title="Editar Metas">Metas</button>
+        <button class="btn-ghost" onclick="handleLogout()">Sair</button>
+      </div>
+    </header>
+
+    <!-- CARDS DO TOPO -->
+    <div class="summary-grid">
+      <div class="card">
+        <div class="card-label"><span>Saldo Pessoal do Mês</span></div>
+        <div class="card-value" id="card-saldo">R$ 0,00</div>
+      </div>
+      <div class="card card-green">
+        <div class="card-label"><span>Receitas</span></div>
+        <div class="card-value" id="card-receitas">R$ 0,00</div>
+      </div>
+      <div class="card card-red">
+        <div class="card-label"><span>Despesas Próprias</span></div>
+        <div class="card-value" id="card-despesas">R$ 0,00</div>
+      </div>
+      <div class="card card-blue">
+        <div class="card-label"><span>Compras Terceiras</span><span>A receber</span></div>
+        <div class="card-value" id="card-terceiras">R$ 0,00</div>
+      </div>
+    </div>
+
+    <!-- CORPO EM DUAS COLUNAS -->
+    <div class="main-grid">
+      <div class="left-col">
+        <!-- METAS MENSAIS -->
+        <div class="card">
+          <div class="section-title">
+            <span>Metas Mensais</span>
+            <button class="btn-ghost" style="padding: 4px 8px; font-size: 0.75rem;" onclick="openGoalModal()">Ajustar</button>
+          </div>
+          <div class="goal-item">
+            <div class="goal-header">
+              <span>Meta Moradia: <strong id="meta-moradia-alvo">R$ 400,00</strong> / mês</span>
+              <span id="meta-moradia-status">R$ 0,00 (0%)</span>
+            </div>
+            <div class="progress-bg"><div class="progress-fill" id="meta-moradia-bar" style="width: 0%"></div></div>
+          </div>
+          <div class="goal-item">
+            <div class="goal-header">
+              <span>Meta Investimentos: <strong id="meta-inv-alvo">R$ 100,00</strong> / mês</span>
+              <span id="meta-inv-status">R$ 0,00 (0%)</span>
+            </div>
+            <div class="progress-bg"><div class="progress-fill" id="meta-inv-bar" style="width: 0%"></div></div>
+          </div>
+        </div>
+
+        <!-- GRÁFICO DE CATEGORIAS -->
+        <div class="card">
+          <div class="section-title"><span>Categorias de Gastos</span></div>
+          <div class="chart-wrapper">
+            <canvas id="categoryChart"></canvas>
+          </div>
+        </div>
+      </div>
+
+      <!-- ÚLTIMAS TRANSAÇÕES -->
+      <div class="card">
+        <div class="section-title">
+          <span>Lançamentos do Mês</span>
+          <select id="cat-filter" onchange="renderTransactions()" style="padding: 4px 8px; font-size: 0.8rem;">
+            <option value="TODAS">Todas as categorias</option>
+            <option value="Estudos">Estudos</option>
+            <option value="Investimentos">Investimentos</option>
+            <option value="Compras do Cartão">Compras do Cartão</option>
+            <option value="Compras Terceiras">Compras Terceiras</option>
+            <option value="Moradia">Moradia</option>
+            <option value="Lazer">Lazer</option>
+            <option value="Saúde">Saúde</option>
+            <option value="Outro">Outro</option>
+          </select>
+        </div>
+        <div class="tx-list" id="tx-list"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL NOVO LANÇAMENTO -->
+  <div class="modal-backdrop" id="tx-modal">
+    <div class="modal">
+      <div class="section-title"><span>Novo Lançamento</span></div>
+      <div class="form-group">
+        <label>Tipo</label>
+        <select id="tx-tipo">
+          <option value="despesa">Despesa / Aporte</option>
+          <option value="receita">Receita / Reembolso</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>Descrição</label>
+        <input type="text" id="tx-desc" placeholder="Ex: Mensalidade, Aporte, Mercado..." />
+      </div>
+      <div class="form-group">
+        <label>Valor (R$)</label>
+        <input type="number" id="tx-valor" step="0.01" placeholder="0,00" />
+      </div>
+      <div class="form-group">
+        <label>Categoria</label>
+        <select id="tx-cat">
+          <option value="Estudos">Estudos</option>
+          <option value="Investimentos">Investimentos</option>
+          <option value="Compras do Cartão">Compras do Cartão</option>
+          <option value="Compras Terceiras">Compras Terceiras</option>
+          <option value="Moradia">Moradia</option>
+          <option value="Lazer">Lazer</option>
+          <option value="Saúde">Saúde</option>
+          <option value="Outro">Outro</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>Data</label>
+        <input type="date" id="tx-data" />
+      </div>
+      <div class="modal-actions">
+        <button class="btn-ghost" onclick="closeTxModal()">Cancelar</button>
+        <button class="btn-primary" onclick="saveTransaction()">Salvar</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL EDITAR METAS -->
+  <div class="modal-backdrop" id="goal-modal">
+    <div class="modal">
+      <div class="section-title"><span>Ajustar Metas Mensais</span></div>
+      <div class="form-group">
+        <label>Meta Mensal - Moradia (R$)</label>
+        <input type="number" id="input-meta-moradia" step="10" value="400" />
+      </div>
+      <div class="form-group">
+        <label>Meta Mensal - Investimentos (R$)</label>
+        <input type="number" id="input-meta-inv" step="10" value="100" />
+      </div>
+      <div class="modal-actions">
+        <button class="btn-ghost" onclick="closeGoalModal()">Cancelar</button>
+        <button class="btn-primary" onclick="saveGoals()">Atualizar Metas</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // ==========================================
+    // CONFIGURAÇÃO DO SUPABASE (COLE SUAS CHAVES)
+    // ==========================================
+    const SUPABASE_URL = 'https://mohhxawhdmlhcyegozkj.supabase.co';
+    const SUPABASE_ANON_KEY = 'sb_publishable_Wi9OQ_AcyG2SxZ8Ae0IReQ_OymIsC5Y';
+    const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+    let transactions = [];
+    let goals = { meta_moradia: 400, meta_investimentos: 100 };
+    let chartInstance = null;
+
+    const CATEGORIES = ['Estudos', 'Investimentos', 'Compras do Cartão', 'Compras Terceiras', 'Moradia', 'Lazer', 'Saúde', 'Outro'];
+    const CAT_COLORS = {
+      'Estudos': '#5a8dee',
+      'Investimentos': '#38a169',
+      'Compras do Cartão': '#a0aec0',
+      'Compras Terceiras': '#4fd1c5',
+      'Moradia': '#dd6b20',
+      'Lazer': '#9f7aea',
+      'Saúde': '#319795',
+      'Outro': '#718096'
+    };
+
+    const formatBRL = (val) => Number(val || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+
+    // Inicialização
+    window.addEventListener('DOMContentLoaded', async () => {
+      const now = new Date();
+      document.getElementById('month-filter').value = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+      document.getElementById('tx-data').valueAsDate = now;
+
+      const { data: { session } } = await sb.auth.getSession();
+      toggleAuthUI(session);
+
+      sb.auth.onAuthStateChange((_event, session) => {
+        toggleAuthUI(session);
+      });
+    });
+
+    function toggleAuthUI(session) {
+      if (session) {
+        document.getElementById('auth-screen').classList.add('hidden');
+        document.getElementById('app-screen').classList.remove('hidden');
+        loadData();
+      } else {
+        document.getElementById('auth-screen').classList.remove('hidden');
+        document.getElementById('app-screen').classList.add('hidden');
+      }
+    }
+
+    async function handleLogin() {
+      const email = document.getElementById('auth-email').value;
+      const password = document.getElementById('auth-password').value;
+      const { error } = await sb.auth.signInWithPassword({ email, password });
+      document.getElementById('auth-error').textContent = error ? 'Erro ao entrar: verifique e-mail e senha.' : '';
+    }
+
+    async function handleSignUp() {
+      const email = document.getElementById('auth-email').value;
+      const password = document.getElementById('auth-password').value;
+      const { error } = await sb.auth.signUp({ email, password });
+      document.getElementById('auth-error').textContent = error ? error.message : 'Conta criada! Se necessário, confirme seu e-mail ou clique em Entrar.';
+    }
+
+    async function handleLogout() {
+      await sb.auth.signOut();
+    }
+
+    async function loadData() {
+      const monthVal = document.getElementById('month-filter').value;
+      if (!monthVal) return;
+
+      const [year, month] = monthVal.split('-');
+      const startDate = `${year}-${month}-01`;
+      const lastDay = new Date(year, month, 0).getDate();
+      const endDate = `${year}-${month}-${lastDay}`;
+
+      // Buscar transações do mês
+      const { data: txData } = await sb
+        .from('transacoes')
+        .select('*')
+        .gte('data', startDate)
+        .lte('data', endDate)
+        .order('data', { ascending: false })
+        .order('created_at', { ascending: false });
+
+      transactions = txData || [];
+
+      // Buscar metas
+      const { data: goalData } = await sb.from('metas').select('*').maybeSingle();
+      if (goalData) {
+        goals = goalData;
+      }
+
+      updateDashboard();
+    }
+
+    function updateDashboard() {
+      let receitas = 0;
+      let despesasProprias = 0;
+      let comprasTerceiras = 0;
+      let totalMoradia = 0;
+      let totalInvestimentos = 0;
+      const catTotals = {};
+      CATEGORIES.forEach(c => catTotals[c] = 0);
+
+      transactions.forEach(tx => {
+        const val = Number(tx.valor);
+        if (tx.categoria === 'Compras Terceiras') {
+          // Despesa de terceiro soma no a receber; receita na mesma categoria abate o valor reembolsado
+          comprasTerceiras += (tx.tipo === 'despesa' ? val : -val);
+        } else {
+          if (tx.tipo === 'receita') {
+            receitas += val;
+          } else {
+            despesasProprias += val;
+            if (catTotals[tx.categoria] !== undefined) {
+              catTotals[tx.categoria] += val;
+            }
+          }
+        }
+
+        if (tx.categoria === 'Moradia' && tx.tipo === 'despesa') totalMoradia += val;
+        if (tx.categoria === 'Investimentos' && tx.tipo === 'despesa') totalInvestimentos += val;
+      });
+
+      const saldo = receitas - despesasProprias;
+
+      document.getElementById('card-saldo').textContent = formatBRL(saldo);
+      document.getElementById('card-receitas').textContent = formatBRL(receitas);
+      document.getElementById('card-despesas').textContent = formatBRL(despesasProprias);
+      document.getElementById('card-terceiras').textContent = formatBRL(Math.max(0, comprasTerceiras));
+
+      // Atualizar Metas
+      updateGoalBar('moradia', totalMoradia, goals.meta_moradia);
+      updateGoalBar('inv', totalInvestimentos, goals.meta_investimentos);
+
+      renderChart(catTotals);
+      renderTransactions();
+    }
+
+    function updateGoalBar(prefix, atual, alvo) {
+      const pct = alvo > 0 ? Math.min(100, Math.round((atual / alvo) * 100)) : 0;
+      document.getElementById(`meta-${prefix}-alvo`).textContent = formatBRL(alvo);
+      document.getElementById(`meta-${prefix}-status`).textContent = `${formatBRL(atual)} (${pct}%)`;
+      const bar = document.getElementById(`meta-${prefix}-bar`);
+      bar.style.width = `${pct}%`;
+      bar.style.background = pct >= 100 ? '#38a169' : '#d69e2e';
+    }
+
+    function renderChart(catTotals) {
+      const ctx = document.getElementById('categoryChart').getContext('2d');
+      const labels = CATEGORIES.filter(c => catTotals[c] > 0);
+      const values = labels.map(c => catTotals[c]);
+      const colors = labels.map(c => CAT_COLORS[c]);
+
+      if (chartInstance) chartInstance.destroy();
+
+      chartInstance = new Chart(ctx, {
+        type: 'doughnut',
+        data: {
+          labels: labels.length ? labels : ['Sem gastos no mês'],
+          datasets: [{
+            data: values.length ? values : [1],
+            backgroundColor: values.length ? colors : ['#282c32'],
+            borderWidth: 0,
+            hoverOffset: 4
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          cutout: '68%',
+          plugins: {
+            legend: {
+              position: 'right',
+              labels: { color: '#cbd5e0', boxWidth: 10, padding: 12, font: { size: 12 } }
+            },
+            tooltip: {
+              enabled: values.length > 0,
+              callbacks: { label: (ctx) => ` ${ctx.label}: ${formatBRL(ctx.raw)}` }
+            }
+          }
+        }
+      });
+    }
+
+    function renderTransactions() {
+      const filter = document.getElementById('cat-filter').value;
+      const list = document.getElementById('tx-list');
+      list.innerHTML = '';
+
+      const filtered = filter === 'TODAS' ? transactions : transactions.filter(t => t.categoria === filter);
+
+      if (!filtered.length) {
+        list.innerHTML = '<div style="color: var(--text-secondary); font-size: 0.85rem; text-align: center; padding: 30px 0;">Nenhum lançamento encontrado neste filtro.</div>';
+        return;
+      }
+
+      filtered.forEach(tx => {
+        const isThird = tx.categoria === 'Compras Terceiras';
+        const isIn = tx.tipo === 'receita';
+        const sign = isIn ? '+' : '-';
+        const colorClass = isThird ? 'val-third' : (isIn ? 'val-in' : 'val-out');
+        const dateFormatted = tx.data.split('-').reverse().join('/');
+
+        const item = document.createElement('div');
+        item.className = 'tx-item';
+        item.innerHTML = `
+          <div class="tx-left">
+            <div class="tx-desc">
+              <span>${tx.descricao}</span>
+              <span class="badge">${tx.categoria}</span>
+            </div>
+            <span class="tx-date">${dateFormatted}</span>
+          </div>
+          <div class="tx-right">
+            <span class="tx-amount ${colorClass}">${sign} ${formatBRL(tx.valor)}</span>
+            <button class="btn-del" onclick="deleteTransaction('${tx.id}')" title="Excluir">✕</button>
+          </div>
+        `;
+        list.appendChild(item);
+      });
+    }
+
+    // Modais e CRUD
+    function openTxModal() { document.getElementById('tx-modal').style.display = 'flex'; }
+    function closeTxModal() { document.getElementById('tx-modal').style.display = 'none'; }
+
+    async function saveTransaction() {
+      const tipo = document.getElementById('tx-tipo').value;
+      const descricao = document.getElementById('tx-desc').value.trim();
+      const valor = parseFloat(document.getElementById('tx-valor').value);
+      const categoria = document.getElementById('tx-cat').value;
+      const data = document.getElementById('tx-data').value;
+
+      if (!descricao || isNaN(valor) || valor <= 0 || !data) return;
+
+      await sb.from('transacoes').insert([{ tipo, descricao, valor, categoria, data }]);
+      document.getElementById('tx-desc').value = '';
+      document.getElementById('tx-valor').value = '';
+      closeTxModal();
+      loadData();
+    }
+
+    async function deleteTransaction(id) {
+      await sb.from('transacoes').delete().eq('id', id);
+      loadData();
+    }
+
+    function openGoalModal() {
+      document.getElementById('input-meta-moradia').value = goals.meta_moradia;
+      document.getElementById('input-meta-inv').value = goals.meta_investimentos;
+      document.getElementById('goal-modal').style.display = 'flex';
+    }
+    function closeGoalModal() { document.getElementById('goal-modal').style.display = 'none'; }
+
+    async function saveGoals() {
+      const meta_moradia = parseFloat(document.getElementById('input-meta-moradia').value) || 0;
+      const meta_investimentos = parseFloat(document.getElementById('input-meta-inv').value) || 0;
+      const { data: { user } } = await sb.auth.getUser();
+
+      await sb.from('metas').upsert({ user_id: user.id, meta_moradia, meta_investimentos });
+      closeGoalModal();
+      loadData();
+    }
+  </script>
+</body>
+</html>
