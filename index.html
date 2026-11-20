@@ -78,9 +78,9 @@
 
     /* Transactions */
     .tx-list { display: flex; flex-direction: column; gap: 10px; max-height: 460px; overflow-y: auto; padding-right: 4px; }
-    .tx-item { display: flex; justify-content: space-between; align-items: center; padding: 10px 12px; background: var(--bg-input); border-radius: 8px; border: 1px solid transparent; }
+    .tx-item { display: flex; justify-content: space-between; align-items: center; padding: 10px 12px; background: var(--bg-input); border-radius: 8px; border: 1px solid transparent; transition: border-color 0.15s, opacity 0.15s; }
     .tx-item:hover { border-color: var(--border); }
-    .tx-left { display: flex; flex-direction: column; gap: 4px; }
+    .tx-left { display: flex; align-items: center; gap: 12px; }
     .tx-desc { font-size: 0.9rem; font-weight: 500; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
     .tx-date { font-size: 0.75rem; color: var(--text-secondary); }
     .badge { font-size: 0.7rem; padding: 2px 8px; border-radius: 6px; background: #2c3138; color: #cbd5e0; font-weight: 500; }
@@ -276,7 +276,7 @@
 
   <script>
     // ==========================================
-    // CONFIGURAÇÃO DO SUPABASE (COLE SUAS CHAVES)
+    // CONFIGURAÇÃO DO SUPABASE
     // ==========================================
     const SUPABASE_URL = 'https://mohhxawhdmlhcyegozkj.supabase.co';
     const SUPABASE_ANON_KEY = 'sb_publishable_Wi9OQ_AcyG2SxZ8Ae0IReQ_OymIsC5Y';
@@ -285,6 +285,26 @@
     let transactions = [];
     let goals = { meta_moradia: 400, meta_investimentos: 100 };
     let chartInstance = null;
+    let draggedIndex = null;
+
+    // Auto-logoff após 10 minutos de inatividade
+    const INACTIVITY_LIMIT_MS = 10 * 60 * 1000;
+    let inactivityTimer = null;
+
+    function resetInactivityTimer() {
+      clearTimeout(inactivityTimer);
+      inactivityTimer = setTimeout(async () => {
+        const { data: { session } } = await sb.auth.getSession();
+        if (session) {
+          await sb.auth.signOut();
+          document.getElementById('auth-error').textContent = 'Sessão encerrada por inatividade (10 min).';
+        }
+      }, INACTIVITY_LIMIT_MS);
+    }
+
+    ['mousemove', 'mousedown', 'keydown', 'scroll', 'touchstart'].forEach(evt => {
+      window.addEventListener(evt, resetInactivityTimer, { passive: true });
+    });
 
     const CATEGORIES = ['Estudos', 'Investimentos', 'Compras do Cartão', 'Compras Terceiras', 'Moradia', 'Lazer', 'Saúde', 'Outro'];
     const CAT_COLORS = {
@@ -318,8 +338,10 @@
       if (session) {
         document.getElementById('auth-screen').classList.add('hidden');
         document.getElementById('app-screen').classList.remove('hidden');
+        resetInactivityTimer();
         loadData();
       } else {
+        clearTimeout(inactivityTimer);
         document.getElementById('auth-screen').classList.remove('hidden');
         document.getElementById('app-screen').classList.add('hidden');
       }
@@ -352,12 +374,13 @@
       const lastDay = new Date(year, month, 0).getDate();
       const endDate = `${year}-${month}-${lastDay}`;
 
-      // Buscar transações do mês
+      // Buscar transações do mês priorizando a ordem manual
       const { data: txData } = await sb
         .from('transacoes')
         .select('*')
         .gte('data', startDate)
         .lte('data', endDate)
+        .order('ordem', { ascending: true })
         .order('data', { ascending: false })
         .order('created_at', { ascending: false });
 
@@ -384,7 +407,6 @@
       transactions.forEach(tx => {
         const val = Number(tx.valor);
         if (tx.categoria === 'Compras Terceiras') {
-          // Despesa de terceiro soma no a receber; receita na mesma categoria abate o valor reembolsado
           comprasTerceiras += (tx.tipo === 'despesa' ? val : -val);
         } else {
           if (tx.tipo === 'receita') {
@@ -470,11 +492,14 @@
       const filtered = filter === 'TODAS' ? transactions : transactions.filter(t => t.categoria === filter);
 
       if (!filtered.length) {
-        list.innerHTML = '<div style="color: var(--text-secondary); font-size: 0.85rem; text-align: center; padding: 30px 0;">Nenhum lançamento encontrado neste filtro.</div>';
+        const empty = document.createElement('div');
+        empty.style.cssText = 'color: var(--text-secondary); font-size: 0.85rem; text-align: center; padding: 30px 0;';
+        empty.textContent = 'Nenhum lançamento encontrado neste filtro.';
+        list.appendChild(empty);
         return;
       }
 
-      filtered.forEach(tx => {
+      filtered.forEach((tx, index) => {
         const isThird = tx.categoria === 'Compras Terceiras';
         const isIn = tx.tipo === 'receita';
         const sign = isIn ? '+' : '-';
@@ -483,19 +508,95 @@
 
         const item = document.createElement('div');
         item.className = 'tx-item';
-        item.innerHTML = `
-          <div class="tx-left">
-            <div class="tx-desc">
-              <span>${tx.descricao}</span>
-              <span class="badge">${tx.categoria}</span>
-            </div>
-            <span class="tx-date">${dateFormatted}</span>
-          </div>
-          <div class="tx-right">
-            <span class="tx-amount ${colorClass}">${sign} ${formatBRL(tx.valor)}</span>
-            <button class="btn-del" onclick="deleteTransaction('${tx.id}')" title="Excluir">✕</button>
-          </div>
-        `;
+        item.draggable = (filter === 'TODAS');
+        item.style.cursor = (filter === 'TODAS') ? 'grab' : 'default';
+
+        // Eventos de Arrastar e Soltar (Drag & Drop)
+        item.addEventListener('dragstart', () => {
+          draggedIndex = index;
+          item.style.opacity = '0.4';
+        });
+
+        item.addEventListener('dragend', () => {
+          item.style.opacity = '1';
+          draggedIndex = null;
+        });
+
+        item.addEventListener('dragover', (e) => {
+          e.preventDefault();
+          item.style.borderColor = '#38a169';
+        });
+
+        item.addEventListener('dragleave', () => {
+          item.style.borderColor = 'transparent';
+        });
+
+        item.addEventListener('drop', async (e) => {
+          e.preventDefault();
+          item.style.borderColor = 'transparent';
+          if (draggedIndex === null || draggedIndex === index) return;
+
+          // Reordena o array localmente na hora
+          const [movedItem] = transactions.splice(draggedIndex, 1);
+          transactions.splice(index, 0, movedItem);
+          renderTransactions();
+
+          // Salva a nova posição de cada item no Supabase
+          await Promise.all(
+            transactions.map((t, idx) =>
+              sb.from('transacoes').update({ ordem: idx }).eq('id', t.id)
+            )
+          );
+        });
+
+        const left = document.createElement('div');
+        left.className = 'tx-left';
+
+        if (filter === 'TODAS') {
+          const handle = document.createElement('span');
+          handle.textContent = '≡';
+          handle.title = 'Arraste para reordenar';
+          handle.style.cssText = 'color: var(--text-secondary); font-size: 1.2rem; user-select: none; cursor: grab;';
+          left.appendChild(handle);
+        }
+
+        const infoWrapper = document.createElement('div');
+        infoWrapper.style.cssText = 'display: flex; flex-direction: column; gap: 4px;';
+
+        const descRow = document.createElement('div');
+        descRow.className = 'tx-desc';
+
+        const descText = document.createElement('span');
+        descText.textContent = tx.descricao;
+
+        const badge = document.createElement('span');
+        badge.className = 'badge';
+        badge.textContent = tx.categoria;
+
+        descRow.append(descText, badge);
+
+        const dateSpan = document.createElement('span');
+        dateSpan.className = 'tx-date';
+        dateSpan.textContent = dateFormatted;
+
+        infoWrapper.append(descRow, dateSpan);
+        left.appendChild(infoWrapper);
+
+        const right = document.createElement('div');
+        right.className = 'tx-right';
+
+        const amountSpan = document.createElement('span');
+        amountSpan.className = `tx-amount ${colorClass}`;
+        amountSpan.textContent = `${sign} ${formatBRL(tx.valor)}`;
+
+        const delBtn = document.createElement('button');
+        delBtn.className = 'btn-del';
+        delBtn.title = 'Excluir';
+        delBtn.textContent = '✕';
+        delBtn.onclick = () => deleteTransaction(tx.id);
+
+        right.append(amountSpan, delBtn);
+        item.append(left, right);
         list.appendChild(item);
       });
     }
@@ -513,7 +614,7 @@
 
       if (!descricao || isNaN(valor) || valor <= 0 || !data) return;
 
-      await sb.from('transacoes').insert([{ tipo, descricao, valor, categoria, data }]);
+      await sb.from('transacoes').insert([{ tipo, descricao, valor, categoria, data, ordem: 0 }]);
       document.getElementById('tx-desc').value = '';
       document.getElementById('tx-valor').value = '';
       closeTxModal();
