@@ -353,16 +353,13 @@
       const endDate = `${year}-${month}-${lastDay}`;
 
       // Buscar transações do mês
-  const { data: txData } = await sb
-    .from('transacoes')
-    .select('*')
-    .gte('data', startDate)
-    .lte('data', endDate)
-    .order('ordem', { ascending: true })
-    .order('data', { ascending: false })
-    .order('created_at', { ascending: false });
-
-      
+      const { data: txData } = await sb
+        .from('transacoes')
+        .select('*')
+        .gte('data', startDate)
+        .lte('data', endDate)
+        .order('data', { ascending: false })
+        .order('created_at', { ascending: false });
 
       transactions = txData || [];
 
@@ -416,7 +413,7 @@
       updateGoalBar('inv', totalInvestimentos, goals.meta_investimentos);
 
       renderChart(catTotals);
-      nsactions();
+      renderTransactions();
     }
 
     function updateGoalBar(prefix, atual, alvo) {
@@ -465,8 +462,6 @@
       });
     }
 
-    let draggedIndex = null;
-
     function renderTransactions() {
       const filter = document.getElementById('cat-filter').value;
       const list = document.getElementById('tx-list');
@@ -475,105 +470,9 @@
       const filtered = filter === 'TODAS' ? transactions : transactions.filter(t => t.categoria === filter);
 
       if (!filtered.length) {
-        const empty = document.createElement('div');
-        empty.style.cssText = 'color: var(--text-secondary); font-size: 0.85rem; text-align: center; padding: 30px 0;';
-        empty.textContent = 'Nenhum lançamento encontrado neste filtro.';
-        list.appendChild(empty);
+        list.innerHTML = '<div style="color: var(--text-secondary); font-size: 0.85rem; text-align: center; padding: 30px 0;">Nenhum lançamento encontrado neste filtro.</div>';
         return;
       }
-
-      filtered.forEach((tx, index) => {
-        const isThird = tx.categoria === 'Compras Terceiras';
-        const isIn = tx.tipo === 'receita';
-        const sign = isIn ? '+' : '-';
-        const colorClass = isThird ? 'val-third' : (isIn ? 'val-in' : 'val-out');
-        const dateFormatted = tx.data.split('-').reverse().join('/');
-
-        const item = document.createElement('div');
-        item.className = 'tx-item';
-        item.draggable = (filter === 'TODAS');
-        item.style.cursor = (filter === 'TODAS') ? 'grab' : 'default';
-
-        // Eventos de Arrastar e Soltar (Drag & Drop)
-        item.addEventListener('dragstart', () => {
-          draggedIndex = index;
-          item.style.opacity = '0.4';
-        });
-
-        item.addEventListener('dragend', () => {
-          item.style.opacity = '1';
-          draggedIndex = null;
-        });
-
-        item.addEventListener('dragover', (e) => {
-          e.preventDefault();
-          item.style.borderColor = '#38a169';
-        });
-
-        item.addEventListener('dragleave', () => {
-          item.style.borderColor = 'var(--border)';
-        });
-
-        item.addEventListener('drop', async (e) => {
-          e.preventDefault();
-          item.style.borderColor = 'var(--border)';
-          if (draggedIndex === null || draggedIndex === index) return;
-
-          // Reordena o array localmente na hora
-          const [movedItem] = transactions.splice(draggedIndex, 1);
-          transactions.splice(index, 0, movedItem);
-          renderTransactions();
-
-          // Salva a nova posição de cada item no Supabase
-          await Promise.all(
-            transactions.map((t, idx) =>
-              sb.from('transacoes').update({ ordem: idx }).eq('id', t.id)
-            )
-          );
-        });
-
-        const left = document.createElement('div');
-        left.className = 'tx-left';
-        left.style.display = 'flex';
-        left.style.alignItems = 'center';
-        left.style.gap = '12px';
-
-        // Alça visual discreta para arrastar
-        if (filter === 'TODAS') {
-          const handle = document.createElement('span');
-          handle.textContent = '≡';
-          handle.title = 'Arraste para reordenar';
-          handle.style.cssText = 'color: var(--text-secondary); font-size: 1.2rem; user-select: none; cursor: grab;';
-          left.appendChild(handle);
-        }
-
-        const infoWrapper = document.createElement('div');
-
-        const descRow = document.createElement('div');
-        descRow.className = 'tx-desc';
-
-        const descText = document.createElement('span');
-        descText.textContent = tx.descricao;
-
-        const badge = document.createElement('span');
-        badge.className = 'badge';
-        badge.textContent = tx.categoria;
-
-        descRow.append(descText, badge);
-
-        const dateSpan = document.createElement('span');
-        dateSpan.className = 'tx-date';
-        dateSpan.textContent = dateFormatted;
-
-        infoWrapper.append(descRow, dateSpan);
-        left.appendChild(infoWrapper);
-
-        const right = document.createElement('div');
-        right.className = 'tx-right';
-
-        const amountSpan = document
-
-      
 
       filtered.forEach(tx => {
         const isThird = tx.categoria === 'Compras Terceiras';
